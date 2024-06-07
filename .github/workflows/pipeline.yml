@@ -6,7 +6,7 @@ name: CI
 on:
   # Triggers the workflow on push or pull request events but only for the "main" branch
   push:
-    branches: [ "main" ]
+    branches: [ "2024" ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -25,7 +25,7 @@ jobs:
             -v ${{ github.workspace }}/src:/tmp \
             -v ${{ github.workspace }}/analyser/config.json:/bin/conf/config.json \
             -v ${{ github.workspace }}/analyser/output:/bin/output \
-            totvsengpro/advpl-tlpp-code-analyzer
+            docker.totvs.io/sonarqube/advpl-tlpp-code-analyzer
   build:
       name: Build
       needs: [analysis]
@@ -42,7 +42,7 @@ jobs:
             -v ${{ github.workspace }}/protheus/includes:/tmp/includes \
             -v ${{ github.workspace }}/protheus/appserver.ini:/opt/totvs/appserver/appserver.ini \
             -v ${{ github.workspace }}/protheus/apo/:/opt/totvs/protheus/apo/ \
-            totvsengpro/appserver-dev \
+            docker.totvs.io/universo/appserver:latest \
             ./appsrvlinux -compile -env=environment -files=/tmp/compile -includes=/tmp/includes
         - name: 'Upload custom RPO'
           uses: actions/upload-artifact@v3
@@ -90,7 +90,7 @@ jobs:
             -v ${{ github.workspace }}/protheus/includes:/tmp/includes \
             -v ${{ github.workspace }}/protheus/appserver.ini:/opt/totvs/appserver/appserver.ini \
             -v ${{ github.workspace }}/protheus/apo/:/opt/totvs/protheus/apo/ \
-            totvsengpro/appserver-dev \
+            docker.totvs.io/universo/appserver:latest \
             ./appsrvlinux -compile -genpatch -env=environment -files=/tmp/compile/sources.lst -includes=/tmp/includes -outgenpatch=/tmp/compile -patchtype=ptm
         - name: 'Upload patch'
           uses: actions/upload-artifact@v3
