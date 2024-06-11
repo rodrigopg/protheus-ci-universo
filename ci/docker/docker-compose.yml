@@ -23,9 +23,10 @@ services:
  appserver:
   image: "docker.totvs.io/universo/appserver"
   volumes:
-  - "../../protheus/systemload/:/opt/totvs/protheus/protheus_data/systemload/"
   - "../../protheus/appserver.ini:/opt/totvs/appserver/appserver.ini"
+  - "../../protheus/systemload/:/opt/totvs/protheus/protheus_data/systemload/"
   - "../../protheus/apo/:/opt/totvs/protheus/apo/"
+  # - "../../protheus/apo/custom.rpo:/opt/totvs/protheus/apo/custom.rpo"
   command:
   - "./appsrvlinux"
   ports:

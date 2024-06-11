@@ -25,7 +25,7 @@ jobs:
             -v ${{ github.workspace }}/src:/tmp \
             -v ${{ github.workspace }}/analyser/config.json:/bin/conf/config.json \
             -v ${{ github.workspace }}/analyser/output:/bin/output \
-            docker.totvs.io/sonarqube/advpl-tlpp-code-analyzer
+            totvsengpro/advpl-tlpp-code-analyzer:latest
   build:
       name: Build
       needs: [analysis]
@@ -33,10 +33,24 @@ jobs:
       steps:
         - name: Checkout repository
           uses: actions/checkout@v3
+        - name: Checkout private artifacts
+          run: |
+            mkdir -p ~/.ssh
+            echo "${{ secrets.GITEA_SSH }}" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            ssh-keyscan code.engpro.totvs.com.br >> ~/.ssh/known_hosts
+            git clone git@code.engpro.totvs.com.br:engpro/protheus-ci-universo-artefatos.git artifacts
+        - name: List artifacts files
+          run: |
+            ls -lah ${{ github.workspace }}/artifacts/includes/
+        - name: Copy artifacts
+          run: |
+            cp ${{ github.workspace }}/artifacts/includes/includes.zip ${{ github.workspace }}/protheus/includes/includes.zip
         - name: Unzip includes
           run: cd ./protheus/includes && unzip includes.zip
-        - name: docker
+        - name: build custom rpo
           run: |
+            echo ${{ secrets.DOCKERTOKEN }} | docker login docker.totvs.io -u ${{ secrets.DOCKERUSER }} --password-stdin
             docker run --rm \
             -v ${{ github.workspace }}/src:/tmp/compile \
             -v ${{ github.workspace }}/protheus/includes:/tmp/includes \
@@ -52,23 +66,55 @@ jobs:
   tir:
       name: TIR
       needs: [build]
-      runs-on: [self-hosted, linux, tir]
+      runs-on: ubuntu-latest
       steps:
         - name: Checkout repository
           uses: actions/checkout@v3
-        - name: Apply custom RPO
+        - name: Download custom RPO
           uses: actions/download-artifact@v3
           with:
             name: custom-rpo
-            path: /share/protheus/apo/
+            path: ${{ github.workspace }}/protheus/apo/
+
+        - name: Checkout private artifacts
+          run: |
+            mkdir -p ~/.ssh
+            echo "${{ secrets.GITEA_SSH }}" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            ssh-keyscan code.engpro.totvs.com.br >> ~/.ssh/known_hosts
+            git clone git@code.engpro.totvs.com.br:engpro/protheus-ci-universo-artefatos.git artifacts
+        - name: List artifacts files
+          run: |
+            ls -lah ${{ github.workspace }}/artifacts/apo/
+            ls -lah ${{ github.workspace }}/artifacts/systemload/
+        - name: Copy artifacts
+          run: |
+            cp ${{ github.workspace }}/artifacts/apo/tttm120.rpo ${{ github.workspace }}/protheus/apo/tttm120.rpo
+            cp ${{ github.workspace }}/artifacts/systemload/sxs.zip ${{ github.workspace }}/protheus/systemload/sxs.zip
+
+        - name: Unzip SXs
+          run: cd ./protheus/systemload && unzip sxs.zip
+        - name: List apo files
+          run: pwd && ls -lah ${{ github.workspace }}/protheus/apo/
+        - name: List systemload files
+          run: ls -lah ${{ github.workspace }}/protheus/systemload/
+
+        - name: Up Protheus Env
+          run: |
+            echo ${{ secrets.DOCKERTOKEN }} | docker login docker.totvs.io -u ${{ secrets.DOCKERUSER }} --password-stdin
+            bash ci/scripts/up_env.sh
         - name: Test Protheus Connection
+          run: curl localhost:8080
+        - name: run tir
           run: |
-            curl localhost:8080
-        - name: docker
-          run: |
-            HOME=/tmp python3 ${{ github.workspace }}/tir/CRMA980TESTSUITE.py
+            docker run --rm --network=host -e HOME=/tmp \
+            -v ${{ github.workspace }}/tir:/local totvsengpro/tir \
+            python3 /local/CRMA980TESTSUITE.py
+        - name: Down Protheus Env
+          run: bash ci/scripts/down_env.sh
+          if: always()
   patch:
-      name: Patch Gen
+      name: Patch Generation
       needs: [tir]
       runs-on: ubuntu-latest
       steps:
@@ -83,8 +129,9 @@ jobs:
             path: ${{ github.workspace }}/protheus/apo/
         - name: Get patch files
           run: ls -lah ./protheus/apo && cd ./src && bash ../ci/scripts/list-files.sh
-        - name: docker
+        - name: build patch
           run: |
+            echo ${{ secrets.DOCKERTOKEN }} | docker login docker.totvs.io -u ${{ secrets.DOCKERUSER }} --password-stdin
             docker run --rm \
             -v ${{ github.workspace }}/src:/tmp/compile \
             -v ${{ github.workspace }}/protheus/includes:/tmp/includes \
