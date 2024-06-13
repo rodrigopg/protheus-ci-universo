@@ -1,38 +1,33 @@
-# This is a basic workflow to help you get started with Actions
-
 name: CI
-
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
   push:
     branches: [ "2024" ]
-
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
-
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   analysis:
-      name: Code Analysis
+      name: Code Analysis/Inspeção
       runs-on: ubuntu-latest
       steps:
         - name: Checkout repository
           uses: actions/checkout@v3
-        - name: docker
+
+        - name: analysis
           run: |
             docker run --rm \
             -v ${{ github.workspace }}/src:/tmp \
             -v ${{ github.workspace }}/analyser/config.json:/bin/conf/config.json \
             -v ${{ github.workspace }}/analyser/output:/bin/output \
             totvsengpro/advpl-tlpp-code-analyzer:latest
+
   build:
-      name: Build
+      name: Build/Construção
       needs: [analysis]
       runs-on: ubuntu-latest
       steps:
         - name: Checkout repository
           uses: actions/checkout@v3
+
         - name: Checkout private artifacts
           run: |
             mkdir -p ~/.ssh
@@ -40,14 +35,18 @@ jobs:
             chmod 600 ~/.ssh/id_ed25519
             ssh-keyscan code.engpro.totvs.com.br >> ~/.ssh/known_hosts
             git clone git@code.engpro.totvs.com.br:engpro/protheus-ci-universo-artefatos.git artifacts
-        - name: List artifacts files
+
+        - name: List artifacts from gitea
           run: |
             ls -lah ${{ github.workspace }}/artifacts/includes/
+
         - name: Copy artifacts
           run: |
             cp ${{ github.workspace }}/artifacts/includes/includes.zip ${{ github.workspace }}/protheus/includes/includes.zip
+
         - name: Unzip includes
           run: cd ./protheus/includes && unzip includes.zip
+
         - name: build custom rpo
           run: |
             echo ${{ secrets.DOCKERTOKEN }} | docker login docker.totvs.io -u ${{ secrets.DOCKERUSER }} --password-stdin
@@ -58,18 +57,21 @@ jobs:
             -v ${{ github.workspace }}/protheus/apo/:/opt/totvs/protheus/apo/ \
             docker.totvs.io/universo/appserver:latest \
             ./appsrvlinux -compile -env=environment -files=/tmp/compile -includes=/tmp/includes
+
         - name: 'Upload custom RPO'
           uses: actions/upload-artifact@v3
           with:
             name: custom-rpo
             path: ${{ github.workspace }}/protheus/apo/custom.rpo
+
   tir:
-      name: TIR
+      name: Teste/TIR
       needs: [build]
       runs-on: ubuntu-latest
       steps:
         - name: Checkout repository
           uses: actions/checkout@v3
+
         - name: Download custom RPO
           uses: actions/download-artifact@v3
           with:
@@ -83,53 +85,61 @@ jobs:
             chmod 600 ~/.ssh/id_ed25519
             ssh-keyscan code.engpro.totvs.com.br >> ~/.ssh/known_hosts
             git clone git@code.engpro.totvs.com.br:engpro/protheus-ci-universo-artefatos.git artifacts
-        - name: List artifacts files
+
+        - name: List artifacts from gitea
           run: |
             ls -lah ${{ github.workspace }}/artifacts/apo/
             ls -lah ${{ github.workspace }}/artifacts/systemload/
-        - name: Copy artifacts
+
+        - name: Copy artifacts to workspace
           run: |
             cp ${{ github.workspace }}/artifacts/apo/tttm120.rpo ${{ github.workspace }}/protheus/apo/tttm120.rpo
             cp ${{ github.workspace }}/artifacts/systemload/sxs.zip ${{ github.workspace }}/protheus/systemload/sxs.zip
 
         - name: Unzip SXs
           run: cd ./protheus/systemload && unzip sxs.zip
-        - name: List apo files
-          run: pwd && ls -lah ${{ github.workspace }}/protheus/apo/
-        - name: List systemload files
-          run: ls -lah ${{ github.workspace }}/protheus/systemload/
 
-        - name: Up Protheus Env
+        - name: List artifacts files
+          run: |
+            ls -lah ${{ github.workspace }}/protheus/apo/
+            ls -lah ${{ github.workspace }}/protheus/systemload/
+
+        - name: Up Protheus
           run: |
             echo ${{ secrets.DOCKERTOKEN }} | docker login docker.totvs.io -u ${{ secrets.DOCKERUSER }} --password-stdin
             bash ci/scripts/up_env.sh
+
         - name: Test Protheus Connection
           run: curl localhost:8080
-        - name: run tir
+
+        - name: Run TIR
           run: |
             docker run --rm --network=host -e HOME=/tmp \
             -v ${{ github.workspace }}/tir:/local totvsengpro/tir \
             python3 /local/CRMA980TESTSUITE.py
-        - name: Down Protheus Env
+
+        - name: Down Protheus
           run: bash ci/scripts/down_env.sh
           if: always()
+
   patch:
-      name: Patch Generation
+      name: CD/Patch Generation
       needs: [tir]
       runs-on: ubuntu-latest
       steps:
         - name: Checkout repository
           uses: actions/checkout@v3
-          with:
-            clean: false
-        - name: Download custom rpo
+
+        - name: Download custom RPO
           uses: actions/download-artifact@v3
           with:
             name: custom-rpo
             path: ${{ github.workspace }}/protheus/apo/
+
         - name: Get patch files
           run: ls -lah ./protheus/apo && cd ./src && bash ../ci/scripts/list-files.sh
-        - name: build patch
+
+        - name: Build patch
           run: |
             echo ${{ secrets.DOCKERTOKEN }} | docker login docker.totvs.io -u ${{ secrets.DOCKERUSER }} --password-stdin
             docker run --rm \
@@ -139,6 +149,7 @@ jobs:
             -v ${{ github.workspace }}/protheus/apo/:/opt/totvs/protheus/apo/ \
             docker.totvs.io/universo/appserver:latest \
             ./appsrvlinux -compile -genpatch -env=environment -files=/tmp/compile/sources.lst -includes=/tmp/includes -outgenpatch=/tmp/compile -patchtype=ptm
+
         - name: 'Upload patch'
           uses: actions/upload-artifact@v3
           with:
