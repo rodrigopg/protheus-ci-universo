@@ -5,5 +5,4 @@
 *.unq
 *.txt
 *.zip
-!/protheus/includes/includes.zip
 __pycache__
